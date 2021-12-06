@@ -1,0 +1,608 @@
+---
+title: "Netflix_TMPA"
+author: "Thomas Marianos/Patrick Aslakson"
+date: "6/18/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+The internet age and the availability to stream and download music, pictures, and videos has been a huge "disruptor" for many markets and industries. One of the most notably impacted industries by this technology has been movies and television shows. Streaming services like Netflix, Hulu, and Amazon Prime are now available all over the global, providing users with access to a series of movies and television shows right to their home tvs and devices without cable or going out to theaters. 
+
+With the growth of the streaming service market, there is a rising competition between the providers to offer their users the best curation of titles giving a diverse selection of both popular and sometimes neiche titles depending on the counrty or region.
+
+This class project is a culmination of the learning that has transpired over the course of this term.  There are several that have been covered over the course off the term and include Association Rule Mining (ARM), Clustering, Decision Trees, Naïve Bayes (NB), Support Vector Machines (SVM), and Random Forest (RF) to name a few relative methods for data mining available to budding data scientists today. 		
+
+Data Mining is defined as a process of extracting and discovering patterns in large data sets involving methods that involve an amalgamation of machine learning, statistics, and database systems.  Data Mining is a process performed by a data scientist where raw data is manipulated into more useful information.  Data mining is the process of discovering interesting and useful patterns and relationships in large volumes of data.
+	
+Such useful patterns could be used in the evaluation of data for customers in need of analytical work. There are many techniques or models used for data mining at the data scientist’s disposal.  This analysis will utilize four different methods of data analysis including clustering, support vector machines(SVM), Naive Bayes, and Decision Trees.
+
+Clustering is a technique of data segmentation that partitions the data into several groups based on their similarity. Basically, we group the data through a statistical operation. These smaller groups that are formed from the bigger data are known as clusters. Clustering is the most widespread and popular method of Data Analysis and Data Mining.
+
+A support vector machine (SVM) is a supervised machine learning model that uses classification algorithms for two-group classification problems. After giving an SVM model sets of labeled training data for each category, they’re able to categorize new text.
+
+Decision Trees (DTs) are a non-parametric supervised learning method used for classification and regression. The goal is to create a model that predicts the value of a target variable by learning simple decision rules inferred from the data features. A tree can be seen as a piecewise constant approximation.
+
+Naïve Bayes is a set of supervised learning algorithms based on applying Bayes’ theorem with the “naive” assumption of conditional independence between every pair of features given the value of the class variable. There are several variants of Naïve Bayes algorithms which include Gaussian, Multinomial which is the topic of this homework, Complement, Bernoulli, Categorical, and Out-of-Core Naïve Bayes.  The different naive Bayes classifiers differ mainly by the assumptions they make regarding the distribution of the probability of a word in respect to another word.  Naïve Bayes in its many forms is quite good in classifying documents and spam filtering.  NB is in general a very speedy classifier that requires a small amount of training data in order to efficiently classify data. 
+
+# Data
+
+Netflix Movies and TV Shows - Kaggle - https://www.kaggle.com/shivamb/netflix-shows
+
+"This dataset consists of tv shows and movies available on Netflix as of 2019. The dataset is collected from Flixable which is a third-party Netflix search engine."
+
+This project asks data scientists to perform an analysis on any dataset of their choice utilizing the techniques learned throughout the term.  The dataset named netflix is a comma separated values file in Excel.  The dataset has twelve variables including ID, type, title, director, cast, country, release year, listed in, and description.  There are seven-thousand-seven-hundred-eight-eight rows of data with no missing values.   All variables are character strings, with exception for the date added and release year.
+
+Load in libraries
+
+```{r libraries, messages=FALSE}
+
+library(tm)
+library(slam)
+library(quanteda)
+library(SnowballC)
+library(arules)
+library(proxy)
+library(cluster)
+library(stringi)
+library(Matrix)
+library(tidytext)
+library(plyr)
+library(ggplot2)
+library(plotly)
+library(factoextra)
+library(mclust)
+library(dplyr)
+library(RColorBrewer)
+library(stringr)
+library(tidytext)
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(lattice)
+library(caret)
+library(class)
+library(e1071)
+library(FactoMineR)
+library(factoextra)
+library(Matrix)
+library(sqldf)
+library(stringi)
+library(stringr)
+library(tidyverse)
+library(lubridate)
+library(tibble)
+library(naivebayes)
+library(crayon)
+library(tidymodels)
+library(textrecipes)
+library(themis)
+library(LiblineaR)
+library(kernlab)
+
+```
+
+## CSV / Corpus
+
+For the purposes of our analysis, we tried running our models with both the CSV dataset provided by Kaggle as well as a corpus build using the data based on titles listed in each country and the words used in the Listed_in and Description columns.
+
+```{r data}
+
+setwd("/Users/thomasmarianos/OneDrive - Syracuse University/Grad School/IST 707/Project")
+
+# Load csv
+netflix <- read.csv("netflix_titles.csv", na.strings = c("", "NA"), stringsAsFactors =FALSE)
+
+# Load Netflix Corpus
+netflixCorpus <- Corpus(DirSource("netflixCorpus"))
+summary(netflixCorpus)
+
+```
+
+# Data Exploration
+
+In reviewing the raw data, it is obvious that some of the columns of data will need to be culled from the analysis.   The data was first cut down to five columns of data:  type, title, country, listed_in, and description.   For the Naïve Bayes analysis, only the description was used and separated into a corpus by country.   This may or may not have had some effect on the outcome of the analysis and subsequent predictions in the model.
+
+Clean up our csv data to prepare for exploration
+
+```{r explore clean}
+
+netflix$show_id <- NULL
+
+netflix$date_added <- mdy(netflix$date_added)
+
+netflix$listed_in <- as.factor(netflix$listed_in)
+
+netflix$type <- as.factor(netflix$type)
+
+data.frame("Variable"=c(colnames(netflix)), "Missing Values"=sapply(netflix, function(x) sum(is.na(x))), row.names=NULL)
+
+netflix=distinct(netflix, title, country, type, release_year, .keep_all = TRUE)
+
+amount_by_type <- netflix %>% group_by(type) %>% summarise(count = n())
+
+```
+
+Take a look at the number of movies offered vs TV shows
+
+```{r explore mvt}
+
+figure00  <- ggplot(data = amount_by_type, aes(x= type, y= count, fill= type))+ 
+  geom_bar(colour ="black", size= 0.8, fill = "dark green" ,  stat = "identity")+
+  guides(fill= FALSE)+
+  xlab("Netflix Content by Type") + ylab("Amount of Netflix Content")+
+  ggtitle("Amount of Netflix Content By Type")
+
+figure00
+
+```
+
+Take a look at the number of movies and TV shows offered in the 10 countries with the most content offered.
+
+```{r explore top 10}
+
+k <- strsplit(netflix$country, split = ", ")
+
+netflix_countries<- data.frame(type = rep(netflix$type, sapply(k, length)), country = unlist(k))
+
+netflix_countries$country <- as.character(netflix_countries$country)
+
+amount_by_country <- na.omit(netflix_countries) %>%
+  group_by(country, type) %>%
+  summarise(count = n())
+
+u <- reshape(data=data.frame(amount_by_country),idvar="country",
+             v.names = "count",
+             timevar = "type",
+             direction="wide") %>% arrange(desc(count.Movie)) %>%
+  top_n(10)
+
+names(u)[2] <- "Number_of_Movies"
+names(u)[3] <- "Number_of_TV_Shows"
+
+u <- u[order(desc(u$Number_of_Movies +u$Number_of_TV_Shows)),] 
+
+figure000 <- ggplot(u, aes(Number_of_Movies, Number_of_TV_Shows, colour=country))+ 
+  geom_point(size=5)+
+  xlab("Number of Movies") + ylab("Number of TV Shows")+
+  ggtitle("Amount of Netflix Content By Top 10 Country")
+ggplotly(figure000, dynamicTicks = T)
+
+```
+
+Take a look at the number of movies and TV shows added to Netflix over the time recorded.
+
+```{r explore time}
+
+f <- netflix$title
+f <-tibble(f)
+netflix$title <- f
+
+netflix$new_date <- year(netflix$date_added)
+
+df_by_date <- netflix$title %>% 
+  group_by(netflix$new_date, netflix$type) %>% 
+  na.omit(netflix$new_date) %>% 
+  summarise(added_content_num = n())
+
+Type<- df_by_date$`netflix$type`
+Date <- df_by_date$`netflix$new_date`
+Content_Number <- df_by_date$added_content_num
+g1<- ggplot(df_by_date, aes(Date, Content_Number))+
+  geom_line(aes(colour = Type), size = 2)+ 
+  geom_point() + 
+  xlab("Date") + 
+  ylab("Number of Content")+
+  ggtitle("Amount of Netflix Content By Time")
+ggplotly(g1, dynamicTicks = T)
+
+```
+
+Take a look at the top genres provided by Netflix
+
+```{r explore genre}
+
+netflix$listed_in<- as.character(netflix$listed_in)
+t20 <- strsplit(netflix$listed_in, split = ", ")
+count_listed_in<- data.frame(type = rep(netflix$type, 
+                                        sapply(t20, length)), 
+                             listed_in = unlist(t20))
+count_listed_in$listed_in <- as.character(gsub(",","",count_listed_in$listed_in))
+df_count_listed_in <- count_listed_in %>% 
+  group_by(listed_in) %>% 
+  summarise(count = n()) %>% 
+  top_n(20)
+
+figure4 <- plot_ly(df_count_listed_in, x= ~listed_in, y= ~df_count_listed_in$count, type = "bar" )
+figure4 <- figure4 %>% layout(xaxis=list(categoryorder = "array",categoryarray =df_count_listed_in$listed_in, title="Genre"), yaxis = list(title = 'Count'),title="20 Top Genres On Netflix")
+figure4
+
+```
+
+# Analysis - CSV
+
+## Clustering
+
+```{r clust}
+
+netflix$type <- as.numeric(netflix$type)
+
+```
+
+Remove type from dataset
+
+```{r clust2}
+
+netflix_km <-netflix$type
+
+Var <- netflix$type
+
+str(Var)
+summary(Var)
+length(Var)
+dim(Var)
+
+```
+
+Make the file names the row names. Need a dataframe of numerical values for k-means
+
+```{r clust3}
+
+netflix_km <- as.data.frame(netflix_km)
+
+```
+
+Optimal number of clusters
+
+```{r clust4}
+
+fviz_nbclust(netflix_km, FUN =hcut, method = "silhouette")
+
+set.seed(123)
+final <- kmeans(netflix_km, 2, nstart = 25)
+print(final)
+
+```
+
+Run Kmeans
+
+```{r clust5}
+
+set.seed(20)
+
+Clusters <- kmeans(netflix_km, 2)
+netflix_km$Clusters <- as.factor(Clusters$cluster)
+
+str(Clusters)
+Clusters$centers
+
+```
+
+Add clusters to dataframe original dataframe with author name
+
+```{r clust6}
+
+netflix_km2 <- netflix
+netflix_km2$Clusters <- as.factor(Clusters$cluster)
+
+```
+
+Plot results
+
+```{r clust7}
+
+clusplot(netflix_km, netflix_km$Clusters, color=TRUE, shade=TRUE, labels=0, lines=0)
+
+ggplot(data=netflix_km2, aes(x=country, fill=Clusters))+
+  geom_bar(stat="count") +
+  labs(title = "K = 2") +
+  theme(plot.title = element_text(hjust=0.5), text=element_text(size=15))
+
+ggplot(data=netflix_km2, aes(x=listed_in, fill=Clusters))+
+  geom_bar(stat="count") +
+  labs(title = "K = 2") +
+  theme(plot.title = element_text(hjust=0.5), text=element_text(size=15))
+
+ggplot(data=netflix_km2, aes(x=type, fill=Clusters))+
+  geom_bar(stat="count") +
+  labs(title = "K = 2") +
+  theme(plot.title = element_text(hjust=0.5), text=element_text(size=15))
+
+```
+
+## SVM
+
+Create train and test datasets
+
+```{r svm1}
+
+set.seed(123)
+netflix_split <- netflix %>%
+  select(type, description) %>%
+  initial_split(strata = type)
+
+netflix_train <- training(netflix_split)
+netflix_test <- testing(netflix_split)
+
+```
+
+Create the folds and the recipe
+
+```{r svm recipe}
+
+set.seed(234)
+netflix_folds <- vfold_cv(netflix_train, strata = type)
+netflix_folds
+
+netflix_rec <- recipe(type ~ description, data = netflix_train) %>%
+  step_tokenize(description) %>%
+  step_tokenfilter(description, max_tokens = 1e3) %>%
+  step_tfidf(description) %>%
+  step_normalize(all_numeric_predictors()) %>%
+  step_smote(type)
+
+netflix_rec
+
+```
+
+Create the linear svm model
+
+```{r svm linear}
+
+svm_spec <- svm_linear() %>%
+  set_mode("classification") %>%
+  set_engine("LiblineaR")
+
+netflix_wf <- workflow() %>%
+  add_recipe(netflix_rec) %>%
+  add_model(svm_spec)
+
+netflix_wf
+
+```
+
+```{r svm linear2}
+
+doParallel::registerDoParallel()
+set.seed(123)
+svm_rs <- fit_resamples(
+  netflix_wf,
+  netflix_folds,
+  metrics = metric_set(accuracy, recall, precision),
+  control = control_resamples(save_pred = TRUE)
+)
+
+collect_metrics(svm_rs)
+
+svm_rs %>%
+  conf_mat_resampled(tidy = FALSE) %>%
+  autoplot()
+
+```
+
+```{r svm linear3}
+
+final_fitted <- last_fit(
+  netflix_wf,
+  netflix_split,
+  metrics = metric_set(accuracy, recall, precision)
+)
+
+collect_metrics(final_fitted)
+
+collect_predictions(final_fitted) %>%
+  conf_mat(type, .pred_class)
+
+netflix_fit <- pull_workflow_fit(final_fitted$.workflow[[1]])
+
+tidy(netflix_fit) %>% arrange(estimate)
+
+tidy(netflix_fit) %>%
+  filter(term != "Bias") %>%
+  group_by(sign = estimate > 0) %>%
+  slice_max(abs(estimate), n = 15) %>%
+  ungroup() %>%
+  mutate(
+    term = str_remove(term,"tfidf_description_"),
+    sign = if_else(sign, "More from TV shows", "More from movies")
+  ) %>%
+  ggplot(aes(abs(estimate), fct_reorder(term, abs(estimate)), fill = sign)) +
+  geom_col(alpha = 0.8, show.legend = FALSE) +
+  facet_wrap(~sign, scales = "free") +
+  labs(
+    x = "Coefficient from linear SVM", y = NULL,
+    title = "Which words are most predictive of movies vs. TV shows?",
+    subtitle = "For description text of movies and TV shows on Netflix"
+  )
+
+```
+
+# Analysis - Corpus
+
+For the second half of our analysis, we created a Corpus file using the countries titles were available in and all words in the Listen_in and Description fields to see if narrowing down the scope would improve the accuracy of prediction. Before creating these models, we will clean up the Corpus and create a Document Term Matrix.
+
+```{r corpus data}
+
+netflixCorpus <- tm_map(netflixCorpus, tolower)
+netflixCorpus <- tm_map(netflixCorpus, removePunctuation)
+netflixCorpus <- tm_map(netflixCorpus, removeWords, stopwords('english'))
+netflixCorpus <- tm_map(netflixCorpus, stemDocument)
+
+minTermFreq <- 20
+maxTermFreq <- 1000
+
+# Create Document Term Matrix
+netflixDTM <- DocumentTermMatrix(netflixCorpus, 
+                                 control = list(bounds = list(c(minTermFreq, maxTermFreq))))
+
+netflixMatrix <- as.matrix(netflixDTM)
+netflixMatrix[1:10,1:10]
+
+```
+
+Vectorize data
+
+```{r vectorize}
+
+wordFreq <- col_sums(netflixMatrix)
+head(wordFreq)
+ord<- order(wordFreq)
+wordFreq[head(ord)]
+wordFreq[tail(ord)]
+
+```
+
+Normalize the data and create a new dataframe with the normalized data
+
+```{r norm df}
+
+netflixMatrix_Norm <- apply(netflixMatrix, 1, function(i) round(i/sum(i), 3))
+netflixMatrix_Norm <- t(netflixMatrix_Norm)
+
+netflix_DF <- as.data.frame(as.matrix(netflixMatrix_Norm))
+netflix_DF <- netflix_DF%>%add_rownames()
+names(netflix_DF)[1] <- "Country"
+netflix_DF$Country <- substr(netflix_DF$Country, 1, nchar(netflix_DF$Country)-4)
+netflix_DF$Country <- str_replace_all(netflix_DF$Country, "-", "")
+netflix_DF$Country <- str_replace_all(netflix_DF$Country, "0", "")
+netflix_DF$Country <- str_replace_all(netflix_DF$Country, "1", "")
+netflix_DF$Country <- str_replace_all(netflix_DF$Country, "2", "")
+netflix_DF$Country <- str_replace_all(netflix_DF$Country, "3", "")
+netflix_DF$Country <- str_replace_all(netflix_DF$Country, "4", "")
+netflix_DF$Country <- str_replace_all(netflix_DF$Country, "5", "")
+netflix_DF$Country <- str_replace_all(netflix_DF$Country, "6", "")
+netflix_DF$Country <- str_replace_all(netflix_DF$Country, "7", "")
+netflix_DF$Country <- str_replace_all(netflix_DF$Country, "8", "")
+netflix_DF$Country <- str_replace_all(netflix_DF$Country, "9", "")
+head(netflix_DF)
+
+colnames(netflix_DF) <- make.names(colnames(netflix_DF))
+netflix_DF$Country <- as.factor(netflix_DF$Country)
+
+```
+
+## Naive Bayes
+
+Create a function that runs the data through Naive Bayes using 5 k-fold cross validation
+
+```{r naive bayes}
+
+set.seed(227)
+
+N <- nrow(netflix_DF)
+kfolds <- 1
+holdout <- split(sample(1:N), 1:kfolds)
+
+naibayes_acc <- c()
+for (k in 1:kfolds) {
+  train <- netflix_DF[holdout[[k]], ]
+  test <- netflix_DF[-holdout[[k]], ]
+  
+  test_noLabel <- test[-c(1)]
+  test_justLabel <- netflix_DF$Country
+  
+  # Naive Bayes
+  train_naibayes <- naiveBayes(Country~., train, na.action = na.pass)
+  summary(train_naibayes)
+  
+  nb_Pred <- predict(train_naibayes, test_noLabel)
+  summary(nb_Pred)
+  
+  naibayes_cm <- confusionMatrix(nb_Pred, test$Country)
+  naibayes_acc <- c(naibayes_acc, naibayes_cm$overall[1])
+}
+mean(unlist(naibayes_acc))
+naibayes_acc
+
+```
+
+## Decision Trees
+
+Set the parameters for our test/train data to be used for decision trees.
+
+```{r trees data}
+
+set.seed(227)
+numTitles <- nrow(netflix_DF)
+trainRatio <- .60
+sample <- sample.int(numTitles, size = floor(trainRatio*numTitles), replace = FALSE)
+train <- netflix_DF[sample, ]
+test <- netflix_DF[-sample, ]
+length(sample)/nrow(netflix_DF)
+
+```
+
+Create our first Decision Tree using default parameters
+
+```{r tree1 create}
+
+train_tree1 <- rpart(Country~., 
+                     data = train, 
+                     method = "class", 
+                     model = T)
+
+rsq.rpart(train_tree1)
+
+plotcp(train_tree1)
+
+fancyRpartPlot(train_tree1)
+
+```
+
+Use the tree model to predict the test dataset
+
+```{r tree1 pred}
+
+pred_tree1 = predict(train_tree1, test, type = "class")
+
+train_tree_cm1 <- confusionMatrix(pred_tree1, test$Country)
+train_tree_cm1$table
+
+train_tree_acc1 <- round(train_tree_cm1$overall[1]*100, 2)
+train_tree_acc1
+
+```
+
+Based on the results of our first tree, we created a second decision tree setting the cp to 0.016 to see if that will improve the accurracy of the results.
+
+```{r tree2 create}
+
+train_tree2 <- rpart(Country~., 
+                     data = train, 
+                     method = "class", 
+                     model = T,
+                     control = rpart.control(cp = 0.016))
+
+rsq.rpart(train_tree2)
+
+plotcp(train_tree2)
+
+fancyRpartPlot(train_tree2)
+
+```
+
+Use the tree model to predict the test dataset
+
+```{r tree2 pred}
+
+pred_tree2 = predict(train_tree2, test, type = "class")
+
+train_tree_cm2 <- confusionMatrix(pred_tree2, test$Country)
+train_tree_cm2$table
+
+netflix_tree_acc2 <- round(train_tree_cm2$overall[1]*100, 2)
+netflix_tree_acc2
+
+```
+
+# Results
+
+For this project, we ran our Netflix dataset through a series of models: Kmeans, Support Vector Machines, Naive Bayes, and Decision Trees. Due to the nature of the dataset, the first three models ran into some issues and gave some unexpected results. We could see through the clustering that there are significantly more films than television shows, creating some skewness in the models. The Naive Bayes model was giving us about a 1% accuracy rate in country prediction with 10 folds, but when we ran with 5 folds it improved to about 30%. Our linear SVM model had an accuracy rate of 68.8% after the final fitting of the model. In the end, the best results were obtained through a decision tree model that gave us an ~85.5% accuracy rate when predicting which country a title will be available in. 
+
+# Conclusion
+
+When using this Netflix dataset, or one similar to it, we found that the best way to predict which countries a film will be available in would be using a decision tree model. When investigated further, we could see that the trees created were based on description and keywords that related to the country the title is in. This would lead to the conclusion that, other than in the United States which has a vast library of titles, most of the movies and TV shows available in each country around the globe, will in some way relate to that country.

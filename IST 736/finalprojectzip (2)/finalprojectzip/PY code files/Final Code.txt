@@ -1,0 +1,843 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Nov 19 12:26:03 2020
+
+@author: LZarzec1
+"""
+
+
+#Load the libraries
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import nltk
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.preprocessing import LabelBinarizer
+from nltk.corpus import stopwords
+from nltk.stem.porter import PorterStemmer
+from wordcloud import WordCloud,STOPWORDS
+from nltk.stem import WordNetLemmatizer
+from nltk.tokenize import word_tokenize,sent_tokenize
+from bs4 import BeautifulSoup
+import spacy
+import re,string,unicodedata
+from nltk.tokenize.toktok import ToktokTokenizer
+from nltk.stem import LancasterStemmer,WordNetLemmatizer
+from sklearn.linear_model import LogisticRegression,SGDClassifier
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.svm import SVC
+from sklearn.metrics import classification_report,confusion_matrix,accuracy_score
+import os
+
+# Current Directory
+def main():
+    
+    print("Current Working Directory " , os.getcwd())
+    
+    
+    try:
+        # Change the current working Directory    
+        os.chdir("C:/Users/LZarzec1/Desktop")
+        print("Directory changed")
+    except OSError:
+        print("Can't change the Current Working Directory")        
+    print("Current Working Directory " , os.getcwd())
+    
+    # Check if New path exists
+    if os.path.exists("C:/Users/LZarzec1/Desktop") :
+        # Change the current working Directory    
+        os.chdir("C:/Users/LZarzec1/Desktop")
+    else:
+        print("Can't change the Current Working Directory")    
+        
+    
+    print("Current Working Directory " , os.getcwd())
+    
+if __name__ == '__main__':
+    main()
+
+
+# Upload the data
+dataset = pd.read_csv('IMDB_Dataset.csv')
+
+# View the dataset and shape
+dataset.shape
+dataset.head()
+
+# Information about the columns
+dataset.info()
+
+
+# Explatory Analysis
+plt.figure(figsize = (3,5))
+sns.countplot(dataset['sentiment'], order=dataset.sentiment.value_counts().index, palette = 'plasma')
+plt.show()
+
+# Functon for Heatmaps
+
+def make_confusion_matrix(cf,
+                          group_names=None,
+                          categories='auto',
+                          count=True,
+                          percent=True,
+                          cbar=True,
+                          xyticks=True,
+                          xyplotlabels=True,
+                          sum_stats=True,
+                          figsize=None,
+                          cmap='Blues',
+                          title=None):
+    '''
+    This function will make a pretty plot of an sklearn Confusion Matrix cm using a Seaborn heatmap visualization.
+    Arguments
+    ---------
+    cf:            confusion matrix to be passed in
+    group_names:   List of strings that represent the labels row by row to be shown in each square.
+    categories:    List of strings containing the categories to be displayed on the x,y axis. Default is 'auto'
+    count:         If True, show the raw number in the confusion matrix. Default is True.
+    normalize:     If True, show the proportions for each category. Default is True.
+    cbar:          If True, show the color bar. The cbar values are based off the values in the confusion matrix.
+                   Default is True.
+    xyticks:       If True, show x and y ticks. Default is True.
+    xyplotlabels:  If True, show 'True Label' and 'Predicted Label' on the figure. Default is True.
+    sum_stats:     If True, display summary statistics below the figure. Default is True.
+    figsize:       Tuple representing the figure size. Default will be the matplotlib rcParams value.
+    cmap:          Colormap of the values displayed from matplotlib.pyplot.cm. Default is 'Blues'
+                   See http://matplotlib.org/examples/color/colormaps_reference.html
+                   
+    title:         Title for the heatmap. Default is None.
+    '''
+
+
+    # CODE TO GENERATE TEXT INSIDE EACH SQUARE
+    blanks = ['' for i in range(cf.size)]
+
+    if group_names and len(group_names)==cf.size:
+        group_labels = ["{}\n".format(value) for value in group_names]
+    else:
+        group_labels = blanks
+
+    if count:
+        group_counts = ["{0:0.0f}\n".format(value) for value in cf.flatten()]
+    else:
+        group_counts = blanks
+
+    if percent:
+        group_percentages = ["{0:.2%}".format(value) for value in cf.flatten()/np.sum(cf)]
+    else:
+        group_percentages = blanks
+
+    box_labels = [f"{v1}{v2}{v3}".strip() for v1, v2, v3 in zip(group_labels,group_counts,group_percentages)]
+    box_labels = np.asarray(box_labels).reshape(cf.shape[0],cf.shape[1])
+
+
+    # CODE TO GENERATE SUMMARY STATISTICS & TEXT FOR SUMMARY STATS
+    if sum_stats:
+        #Accuracy is sum of diagonal divided by total observations
+        accuracy  = np.trace(cf) / float(np.sum(cf))
+
+        #if it is a binary confusion matrix, show some more stats
+        if len(cf)==2:
+            #Metrics for Binary Confusion Matrices
+            precision = cf[1,1] / sum(cf[:,1])
+            recall    = cf[1,1] / sum(cf[1,:])
+            f1_score  = 2*precision*recall / (precision + recall)
+            stats_text = "\n\nAccuracy={:0.3f}\nPrecision={:0.3f}\nRecall={:0.3f}\nF1 Score={:0.3f}".format(
+                accuracy,precision,recall,f1_score)
+        else:
+            stats_text = "\n\nAccuracy={:0.3f}".format(accuracy)
+    else:
+        stats_text = ""
+
+
+    # SET FIGURE PARAMETERS ACCORDING TO OTHER ARGUMENTS
+    if figsize==None:
+        #Get default figure size if not set
+        figsize = plt.rcParams.get('figure.figsize')
+
+    if xyticks==False:
+        #Do not show categories if xyticks is False
+        categories=False
+
+
+    # MAKE THE HEATMAP VISUALIZATION
+    plt.figure(figsize=figsize)
+    sns.heatmap(cf,annot=box_labels,fmt="",cmap=cmap,cbar=cbar,xticklabels=categories,yticklabels=categories)
+
+    if xyplotlabels:
+        plt.ylabel('True label')
+        plt.xlabel('Predicted label' + stats_text)
+    else:
+        plt.xlabel(stats_text)
+    
+    if title:
+        plt.title(title)
+
+"""
+Preprocessing
+"""
+
+# Split the dataset into labels and text
+dataset_labels = dataset['sentiment']
+dataset_text = dataset['review']
+#print(dataset_labels)
+print(dataset_text)
+
+
+# Apply functions for preprocessing the data
+dataset_text_modified = []
+
+for row in dataset_text:
+      
+      # Removing html strips and noise text
+      row = BeautifulSoup(row, "html.parser")
+      result = row.get_text()
+      # Removing Square Brackets
+      result1 = re.sub('\[[^]]*\]', '', result)
+      #Remove mulitple spaces
+      result2 = re.sub(r"\s+"," ", result1, flags = re.I)
+      #Remove spaces from start and End
+      result3 = re.sub(r"^\s+", "", result2)
+      # Removing Non-Word Characters
+      result4 = re.sub(r"\W+|_", " ", result3)
+      # Removing characters of length 1-2
+      result5 = re.sub(r'\b\w{1,2}\b', '', result4)
+      # Remove multiple spaces againNo further documentation available
+      result6 = re.sub(r"\s+"," ", result5, flags = re.I)
+      # Remove numbers
+      result7 = re.sub(r"(\b|\s+\-?|^\-?)(\d+|\d*\.\d+)\b","", result6)
+      dataset_text_modified.append(result7)
+
+#Print the new reviews
+#print(dataset_text_modified)
+
+# Stemming the text
+from nltk.stem.porter import PorterStemmer
+porter_stemmer = PorterStemmer()
+
+# Use NLTK's PorterStemmer
+def stemming_tokenizer(str_input):
+    words = re.sub(r"[^A-Za-z0-9\-]", " ", str_input).lower().split()
+    words = [porter_stemmer.stem(word) for word in words]
+    return words
+
+"""
+CountVectorizer()
+"""
+
+MyVectorizer = CountVectorizer(
+      input='content',
+      stop_words= 'english',
+      lowercase=(True),
+      tokenizer = stemming_tokenizer,
+      max_features = 250)
+
+# Fit the model to the filepath data
+dataset_path = MyVectorizer.fit_transform(dataset_text_modified)
+
+"""
+TF-IDF
+"""
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+# Make a new Tfidf Vectorizer
+MyVectorizer_Tfid = TfidfVectorizer(
+      input='content',
+      stop_words='english', 
+      tokenizer=stemming_tokenizer,
+      lowercase=(True),
+      max_features = 250)
+
+# Fit the model to the filepath data
+dataset_path_Tfid = MyVectorizer_Tfid.fit_transform(dataset_text_modified)
+
+
+"""
+Bernouli
+"""
+
+MyVect_Bern = CountVectorizer(
+      input='content',
+      stop_words='english', 
+      tokenizer=stemming_tokenizer,
+      binary=True,
+      lowercase=(True),
+      max_features = 250)
+
+# Fit the model to the filepath data
+dataset_path_Bernouli = MyVect_Bern.fit_transform(dataset_text_modified)
+
+
+
+
+"""
+Dataframe Manipulation
+"""
+
+# Retrieve the features or words of the CountVectorizer  
+ColumnName_CV = MyVectorizer.get_feature_names()
+
+ColumnName_Tfid = MyVectorizer_Tfid.get_feature_names()
+
+
+ColumnName_Bern = MyVect_Bern.get_feature_names()
+
+
+Sentiment_CV  = pd.DataFrame(dataset_path.toarray(),columns=ColumnName_CV)
+
+Sentiment_Tfid  = pd.DataFrame(dataset_path_Tfid.toarray(),columns=ColumnName_Tfid)
+
+Sentiment_Bern  = pd.DataFrame(dataset_path_Bernouli.toarray(),columns=ColumnName_Bern)
+
+# Create an Empty Dictionary
+MyColumNames_CV = {}
+
+# Create an Empty Dictionary
+MyColumNames_Tfid= {}
+
+# Create an Empty Dictionary
+MyColumNames_Bern = {}
+
+# Loop through the length of the array (each componenet is a label)
+for i in range(0, len(dataset_labels)):
+   MyColumNames_CV[i] = dataset_labels[i] 
+   
+   # Loop through the length of the array (each componenet is a label)
+for i in range(0, len(dataset_labels)):
+   MyColumNames_Tfid[i] = dataset_labels[i] 
+   
+   # Loop through the length of the array (each componenet is a label)
+for i in range(0, len(dataset_labels)):
+   MyColumNames_Bern[i] = dataset_labels[i] 
+
+#print("Labels: ", MyColumNames_CV)
+
+#print("Labels: ", MyColumNames_Tfid)
+
+#print("Labels: ", MyColumNames_Bern)
+
+for i in range(0, len(dataset_labels)):
+   MyColumNames_CV[i] = dataset_labels[i].rstrip('0123456789')
+   
+for i in range(0, len(dataset_labels)):
+   MyColumNames_Tfid[i] = dataset_labels[i].rstrip('0123456789')
+   
+for i in range(0, len(dataset_labels)):
+   MyColumNames_Bern[i] = dataset_labels[i].rstrip('0123456789')
+   
+Sentiment_CV = Sentiment_CV.rename(MyColumNames_CV, axis = 'index')
+print(Sentiment_CV)
+
+Sentiment_Tfid = Sentiment_Tfid.rename(MyColumNames_Tfid, axis = 'index')
+print(Sentiment_Tfid)
+
+Sentiment_Bern = Sentiment_Bern.rename(MyColumNames_Bern, axis = 'index')
+print(Sentiment_Bern)
+
+# Create new column with the labels
+Sentiment_CV.reset_index(inplace=True)
+Sentiment_CV = Sentiment_CV.rename(columns = {'index':'Sentiment'})
+#print(Sentiment_CV)
+#print(Sentiment_CV.iloc[:, 1:])
+#print(Sentiment_CV.iloc[:, 0])
+
+Sentiment_Tfid.reset_index(inplace=True)
+Sentiment_Tfid = Sentiment_Tfid.rename(columns = {'index':'Sentiment'})
+
+Sentiment_Bern.reset_index(inplace=True)
+Sentiment_Bern = Sentiment_Bern.rename(columns = {'index':'Sentiment'})
+
+
+#Create training and test sets
+
+from sklearn.model_selection import train_test_split
+X_train_CV, X_test_CV, y_train_CV, y_test_CV = train_test_split(Sentiment_CV.iloc[:, 1:], Sentiment_CV.iloc[:, 0], test_size = .20, random_state = 0 )
+
+#Create training and test sets
+
+from sklearn.model_selection import train_test_split
+X_train_Tfid, X_test_Tfid, y_train_Tfid, y_test_Tfid = train_test_split(Sentiment_Tfid.iloc[:, 1:], Sentiment_Tfid.iloc[:, 0], test_size = .20, random_state = 0 )
+
+#Create training and test sets
+
+from sklearn.model_selection import train_test_split
+X_train_Bern, X_test_Bern, y_train_Bern, y_test_Bern = train_test_split(Sentiment_Bern.iloc[:, 1:], Sentiment_Bern.iloc[:, 0], test_size = .20, random_state = 0 )
+
+
+"""
+MultiNomial Model
+"""
+
+# Models
+from sklearn.naive_bayes import MultinomialNB
+
+MNB = MultinomialNB()
+MNB.fit(X_train_CV, y_train_CV)
+
+# Evaluating the model
+from sklearn import metrics
+predicted = MNB.predict(X_test_CV)
+accuracy_score = metrics.accuracy_score(predicted, y_test_CV)
+
+print(str('{:04.2f}'.format(accuracy_score*100))+'%')
+
+from sklearn.metrics import confusion_matrix
+
+cnf_matrix_countv =  confusion_matrix(y_test_CV, predicted)
+print("The confusion matrix is:")
+print(cnf_matrix_countv)
+
+labels = ['True Neg','False Pos','False Neg','True Pos']
+categories = y_test_CV
+make_confusion_matrix(cnf_matrix_countv)
+
+
+"""
+Support Vector Machine Model
+"""
+
+
+from sklearn.svm import SVC
+
+# Linear
+classifier_linear = SVC(kernel = 'linear', random_state = 0)
+classifier_linear.fit(X_train_CV, y_train_CV)
+
+# Poly
+classifier_poly = SVC(kernel = 'poly', random_state = 0)
+classifier_poly.fit(X_train_CV, y_train_CV)
+
+# RBF
+classifier_rbf = SVC(kernel = 'rbf', random_state = 0)
+classifier_rbf.fit(X_train_CV, y_train_CV)
+
+# Sigmoid
+classifier_sigmoid = SVC(kernel = 'sigmoid', random_state = 0)
+classifier_sigmoid.fit(X_train_CV, y_train_CV)
+
+# Predicting the Test set results
+# Linear
+y_pred_linear = classifier_linear.predict(X_test_CV)
+print(y_pred_linear)
+
+# Poly
+y_pred_poly = classifier_poly.predict(X_test_CV)
+print(y_pred_poly)
+
+# RBF
+y_pred_rbf = classifier_rbf.predict(X_test_CV)
+print(y_pred_rbf)
+
+# Sigmoid
+y_pred_sigmoid = classifier_sigmoid.predict(X_test_CV)
+print(y_pred_sigmoid)
+
+
+from sklearn import metrics
+
+#Linear
+accuracy_score_linear = metrics.accuracy_score(y_pred_linear, y_test_CV)
+print(str('{:04.2f}'.format(accuracy_score_linear*100))+'%')
+
+#Poly
+accuracy_score_poly = metrics.accuracy_score(y_pred_poly, y_test_CV)
+print(str('{:04.2f}'.format(accuracy_score_poly*100))+'%')
+
+#RBF
+accuracy_score_rbf = metrics.accuracy_score(y_pred_rbf, y_test_CV)
+print(str('{:04.2f}'.format(accuracy_score_rbf*100))+'%')
+
+#Sigmoid
+accuracy_score_sigmoid = metrics.accuracy_score(y_pred_sigmoid, y_test_CV)
+print(str('{:04.2f}'.format(accuracy_score_sigmoid*100))+'%')
+
+# Confusion Matrix
+from sklearn.metrics import confusion_matrix
+
+# Linear
+cnf_matrix_linear = confusion_matrix(y_test_CV, y_pred_linear)
+print("The confusion matrix is:")
+print(cnf_matrix_linear)
+labels = ['True Neg','False Pos','False Neg','True Pos']
+categories = y_test_CV
+make_confusion_matrix(cnf_matrix_linear)
+
+
+# Poly
+cnf_matrix_poly = confusion_matrix(y_test_CV, y_pred_poly)
+print("The confusion matrix is:")
+print(cnf_matrix_poly)
+labels = ['True Neg','False Pos','False Neg','True Pos']
+categories = y_test_CV
+make_confusion_matrix(cnf_matrix_poly)
+
+
+# RBF
+cnf_matrix_rbf = confusion_matrix(y_test_CV, y_pred_rbf)
+print("The confusion matrix is:")
+print(cnf_matrix_rbf)
+labels = ['True Neg','False Pos','False Neg','True Pos']
+categories = y_test_CV
+make_confusion_matrix(cnf_matrix_rbf)
+
+
+# Sigmoid
+cnf_matrix_sigmoid = confusion_matrix(y_test_CV, y_pred_sigmoid)
+print("The confusion matrix is:")
+print(cnf_matrix_sigmoid)
+labels = ['True Neg','False Pos','False Neg','True Pos']
+categories = y_test_CV
+make_confusion_matrix(cnf_matrix_sigmoid)
+
+"""
+LDA Model
+"""
+
+# Load the LDA model from sk-learn
+from sklearn.decomposition import LatentDirichletAllocation as LDA
+
+LDA_Dataframe =pd.DataFrame(data = dataset_text)
+LDA_Dataframe
+
+print(LDA_Dataframe.head())
+# iterating the columns 
+for col in LDA_Dataframe.columns: 
+    print(col)     
+    
+    
+print(LDA_Dataframe["review"])
+    
+    
+LDA_Dataframe.head() 
+
+import re    
+
+
+# Remove punctuation
+LDA_Dataframe['review'] = LDA_Dataframe['review'].map(lambda x: re.sub('[,\.!?]', '', x))
+   
+# Convert the titles to lowercase
+LDA_Dataframe['review'] = LDA_Dataframe['review'].map(lambda x: x.lower())
+
+# Removing Square Brackets
+LDA_Dataframe['review'] = LDA_Dataframe['review'].map(lambda x: re.sub('\[[^]]*\]', '', x))
+
+# Remove mulitple spaces
+LDA_Dataframe['review'] = LDA_Dataframe['review'].map(lambda x: re.sub(r"\s+"," ", x, flags = re.I))
+
+# Remove spaces from start and End
+LDA_Dataframe['review'] = LDA_Dataframe['review'].map(lambda x: re.sub(r"^\s+", "", x))
+
+# Removing Non-Word Characters
+LDA_Dataframe['review'] = LDA_Dataframe['review'].map(lambda x: re.sub(r"\W+|_", " ", x))
+
+# Removing characters of length 1-2
+LDA_Dataframe['review'] = LDA_Dataframe['review'].map(lambda x: re.sub(r'\b\w{1,2}\b', '', x))
+
+# Remove numbers
+LDA_Dataframe['review'] = LDA_Dataframe['review'].map(lambda x: re.sub(r"(\b|\s+\-?|^\-?)(\d+|\d*\.\d+)\b","", x))
+
+#Remove multiple spaces again
+LDA_Dataframe['review'] = LDA_Dataframe['review'].map(lambda x: re.sub(r"\s+"," ", x, flags = re.I))
+
+# Print out the first rows of papers
+LDA_Dataframe['review'].head() 
+
+# Import the wordcloud library
+from wordcloud import WordCloud
+
+# Join the different processed titles together.
+long_string = ','.join(list(LDA_Dataframe['review'].values))
+
+# Create a WordCloud object
+wordcloud = WordCloud(background_color="white", max_words=5000, contour_width=3, contour_color='steelblue')
+
+# Generate a word cloud
+wordcloud.generate(long_string)
+
+# Visualize the word cloud
+wordcloud.to_image()
+
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set_style('whitegrid')
+
+# Helper function
+def plot_10_most_common_words(count_data, count_vectorizer):
+    import matplotlib.pyplot as plt
+    words = count_vectorizer.get_feature_names()
+    total_counts = np.zeros(len(words))
+    for t in count_data:
+        total_counts+=t.toarray()[0]
+    
+    count_dict = (zip(words, total_counts))
+    count_dict = sorted(count_dict, key=lambda x:x[1], reverse=True)[0:10]
+    words = [w[0] for w in count_dict]
+    counts = [w[1] for w in count_dict]
+    x_pos = np.arange(len(words)) 
+    
+    plt.figure(2, figsize=(15, 15/1.6180))
+    plt.subplot(title='10 most common words')
+    sns.set_context("notebook", font_scale=1.25, rc={"lines.linewidth": 2.5})
+    sns.barplot(x_pos, counts, palette='husl')
+    plt.xticks(x_pos, words, rotation=90) 
+    plt.xlabel('words')
+    plt.ylabel('counts')
+    plt.show()
+        
+import nltk
+from nltk.corpus import stopwords
+
+stop_words = set(stopwords.words("english"))
+
+# Initialise the count vectorizer with the English stop words
+count_vectorizer = CountVectorizer(stop_words=stop_words,
+                                   lowercase=(True))
+
+# Fit and transform the processed titles
+count_data = count_vectorizer.fit_transform(LDA_Dataframe['review'])
+
+# Visualise the 10 most common words
+plot_10_most_common_words(count_data, count_vectorizer)
+
+import warnings
+warnings.simplefilter("ignore", DeprecationWarning)
+
+# Load the LDA model from sk-learn
+from sklearn.decomposition import LatentDirichletAllocation as LDA
+
+# Helper function
+def print_topics(model, count_vectorizer, n_top_words):
+    words = count_vectorizer.get_feature_names()
+    for topic_idx, topic in enumerate(model.components_):
+        print("\nTopic #%d:" % topic_idx)
+        print(" ".join([words[i]
+                        for i in topic.argsort()[:-n_top_words - 1:-1]]))
+
+# Tweak the two parameters below
+number_topics = 10
+number_words = 5
+
+# Create and fit the LDA model
+lda = LDA(n_components=number_topics, n_jobs=-1)
+lda.fit(count_data)
+# Print the topics found by the LDA model
+print("Topics found via LDA:")
+print_topics(lda, count_vectorizer, number_words)
+
+
+"""
+BernoulliNB Model
+"""
+
+from sklearn.naive_bayes import BernoulliNB
+
+BNB = BernoulliNB()
+BNB.fit(X_train_Bern, y_train_Bern)
+
+# X_train_Bern, X_test_Bern, y_train_Bern, y_test_Bern
+
+
+# Evaluating the model
+from sklearn import metrics
+predicted_bern = BNB.predict(X_test_Bern)
+accuracy_score_bern = metrics.accuracy_score(predicted_bern, y_test_Bern)
+print(str('{:04.2f}'.format(accuracy_score_bern*100))+'%')
+
+from sklearn.metrics import confusion_matrix
+
+cnf_matrix_bern = confusion_matrix(y_test_Bern, predicted_bern)
+print("The confusion matrix is:")
+print(cnf_matrix_bern)
+labels = ['True Neg','False Pos','False Neg','True Pos']
+categories = y_test_Bern
+make_confusion_matrix(cnf_matrix_bern)
+
+
+"""
+TfidfVectorizer Model
+"""
+
+from sklearn.model_selection import train_test_split
+X_train_Tfid, X_test_Tfid, y_train_Tfid, y_test_Tfid = train_test_split(Sentiment_Tfid.iloc[:, 1:], Sentiment_Tfid.iloc[:, 0], test_size = .20, random_state = 0 )
+
+from sklearn.naive_bayes import MultinomialNB
+
+MNB_tf = MultinomialNB()
+MNB_tf.fit(X_train_Tfid, y_train_Tfid)
+
+# Evaluating the model
+from sklearn import metrics
+predicted_tf = MNB_tf.predict(X_test_Tfid)
+accuracy_score_tf = metrics.accuracy_score(predicted_tf, y_test_Tfid)
+
+print(str('{:04.2f}'.format(accuracy_score_tf*100))+'%')
+
+from sklearn.metrics import confusion_matrix
+
+cnf_matrix_tf= confusion_matrix(y_test_Tfid, predicted_tf)
+print("The confusion matrix is:")
+print(cnf_matrix_tf)
+
+labels = ['True Neg','False Pos','False Neg','True Pos']
+categories = y_test_Tfid
+make_confusion_matrix(cnf_matrix_tf)
+
+"""
+RNN - Deep Learning Neural Network
+"""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+import re
+from keras.models import Sequential, load_model
+from keras.layers import LSTM, Dense, Embedding, Dropout
+from keras.preprocessing.text import Tokenizer
+from keras.preprocessing.sequence import pad_sequences
+
+
+dataset = pd.read_csv("Tweets.csv")
+dataset = dataset.sample(frac=1).reset_index(drop=True)
+dataset.head()
+dataset.shape                       
+dataset = dataset[['airline_sentiment','text']]
+dataset.head()
+
+dataset['text'].str.len().plot.hist()
+dataset['airline_sentiment'].value_counts().plot.bar()
+
+dataset = dataset[['airline_sentiment', 'text']]
+dataset.head()
+
+# Add Group Data Here
+dataset['text'].apply(lambda x: x.lower())
+dataset['text'] = dataset['text'].apply(lambda x: re.sub('[^a-zA-Z0-9\s]', "", x))
+dataset['text'].head()
+
+tokenizer = Tokenizer(num_words = 5000, split = " ")
+tokenizer.fit_on_texts(dataset['text'].values) # np array
+X = tokenizer.texts_to_sequences(dataset['text'].values)
+X = pad_sequences(X)
+X[:7]
+
+X.shape
+
+model = Sequential()
+model.add(Embedding(5000, 256, input_length = X.shape[1]))
+model.add(Dropout(0.3))
+model.add(LSTM(256, return_sequences = True, dropout = 0.3, recurrent_dropout = 0.2))
+model.add(LSTM(256, dropout = 0.3, recurrent_dropout = 0.2))
+model.add(Dense(3, activation = 'softmax'))
+
+model.compile(loss = 'categorical_crossentropy', optimizer = 'adam', metrics = ['accuracy'])
+model.summary()
+
+y = pd.get_dummies(dataset['airline_sentiment']).values
+[print(dataset['airline_sentiment'][i], y[i]) for i in range(0,7)]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state=0)
+print(X_test)
+batch_size = 32
+epochs = 10
+model.fit(X_train, y_train, epochs = epochs, batch_size = batch_size, verbose = 2)
+
+model.save(r'Sentiment_Deep_Learning_model.h5')
+
+"""
+News Dataset - Precdiction Results
+"""
+
+# Upload the data
+news_data = pd.read_csv('News_Test.csv')
+news_data = news_data.sample(frac=1).reset_index(drop=True)
+news_data.head
+news_data.shape                      
+news_data = news_data[['Headline']]
+news_data.head()
+
+news_data['Headline'].str.len().plot.hist()
+
+news_data['Headline'].apply(lambda x: x.lower())
+news_data['Headline'] = news_data['Headline'].apply(lambda x: re.sub('[^a-zA-Z0-9\s]', "", x))
+news_data['Headline'].head()
+
+tokenizer = Tokenizer(num_words = 5000, split = " ")
+tokenizer.fit_on_texts(news_data['Headline'].values)
+X = tokenizer.texts_to_sequences(news_data['Headline'].values)
+X = pad_sequences(X)
+
+X_test = X
+print(X_test)
+X.shape
+
+prediction = model.predict(X_test)
+[print( y[i]) for i in range(len(X_test))]
+
+"""
+Twitter Data - Prediction Results
+"""
+
+# Upload the data
+twitter_data = pd.read_csv('twitter_test_2.csv')
+twitter_data = twitter_data.sample(frac=1).reset_index(drop=True)
+twitter_data.head
+twitter_data.shape                      
+twitter_data = twitter_data[['Headline']]
+twitter_data.head()
+
+twitter_data['Headline'].str.len().plot.hist()
+
+twitter_data['Headline'].apply(lambda x: x.lower())
+twitter_data['Headline'] = twitter_data['Headline'].apply(lambda x: re.sub('[^a-zA-Z0-9\s]', "", x))
+twitter_data['Headline'].head()
+
+tokenizer = Tokenizer(num_words = 5000, split = " ")
+tokenizer.fit_on_texts(twitter_data['Headline'].values)
+X = tokenizer.texts_to_sequences(twitter_data['Headline'].values)
+X = pad_sequences(X)
+
+X_test = X
+print(X_test)
+X.shape
+
+prediction = model.predict(X_test)
+[print( y[i]) for i in range(len(X_test))]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
